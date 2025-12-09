@@ -1,56 +1,117 @@
+import os
+import sqlite3
 from fastmcp import FastMCP
-import json
-import random 
 
-mcp = FastMCP("Simple Calculator Server")
+DB_PATH = os.path.join(os.path.dirname(__file__), "expenses.db")
 
-@mcp.tool
-def add(a:int, b: int) -> int:
-    """
-    Add Two Number Together.
+CATEGORY_PATH = os.path.join(os.path.dirname(__file__), "category.json")
+
+
+
+mcp = FastMCP(name= "ExpenseTracker")
+
+
+def init_db():
+    with sqlite3.connect(DB_PATH) as c:
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS expenses (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                date TEXT NOT NULL,
+                amount REAL NOT NULL,
+                category TEXT NOT NULL,
+                subcategory TEXT DEFAULT '',
+                note TEXT DEFAULT ''
+            )
+        """)
+
+
+init_db()
+
+
+@mcp.tool()
+def add_expense(
+    date: str,
+    amount: float,
+    category: str,
+    subcategory: str = "",
+    note: str = ""
+):
+    """Add a new expense entry to the database"""
+
+    with sqlite3.connect(DB_PATH) as c:
+        cur = c.execute(
+            "INSERT INTO expenses(date, amount, category, subcategory, note) VALUES (?,?,?,?,?)",
+            (date, amount, category, subcategory, note)
+        )
+        c.commit()
+
+        return {
+            "status": "ok",
+            "id": cur.lastrowid
+        }
+
+
+@mcp.tool()
+def list_expenses(start_date, end_date):
     
-    Args:
-        a: First Number
-        b: Second Number
+    """
+    list expenses entries within an inclusive date range.
+    """
+    
+    with sqlite3.connect(DB_PATH) as c:
         
-    Returns:
-        The Sum of A and B
-    """
-    
-    return a + b
-
-@mcp.tool
-def random_number(min_value:int = 1, max_value:int =100) -> int:
-    """Generate a random number within a range
-
-    Args:
-        min_value (int, optional): minimum value. Defaults to 1.
-        max_value (int, optional): maximum value. Defaults to 100.
-
-    Returns:
-        int: a random integer between min_val and max_val
+        cur = c.execute(
+            """
+            SELECT id, date, amount, category, subcategory, note
+            FROM expenses
+            WHERE date BETWEEN ? AND ?
+            ORDER BY id ASC
+            """,
+            (start_date, end_date)
+        )
         
+        cols = [d[0] for d in cur.description]
+        return [dict(zip(cols, r)) for r in cur.fetchall()]
+    
+    
+    
+@mcp.tool()
+def summarize(start_date, end_date, category=None):
+    
     """
-    
-    return random.randint(min_value, max_value)
-
-
-@mcp.resource("info://server")
-def server_info() -> str:
-    """get information about this server
-
-    Returns:
-        str: information about this server
+    summarize expenses by category within an inclusive date range.
     """
+
+    with sqlite3.connect(DB_PATH) as c:
+        quere = ("""
+                 SELECT category, SUM(amount) as total_amount
+                 FROM expenses
+                 WHERE date BETWEEN ? AND ?
+                 """)
+        params = [start_date, end_date]
+        
+        if category:
+            query += " AND category = ?"
+            params.append(category)
+            
+        
+        query += " GROUP BY category ORDER BY category ASC"
+        
+        cur = c.execute(quere, params)
+        
+        cols = [d[0] for d in cur.description]
+        
+        return [dict(zip(cols, r)) for r in cur.fetchall()]
+
+
+
+@mcp.resource("expense://categories", mime_type="application/json")
+def categories():
+    # read fresh each time so you can edit the file without restarting
     
-    info = {
-        "name" : "Simple Calculator server",
-        "version" : "1.0.0",
-        "description" : "A bsic mcp server with the math tool",
-        "tools" : ["add", "random_number"],
-        "author" : "Dhruv Panchal"
-    }
-    
+    with open(CATEGORY_PATH, "r", encoding="utf-8") as f:
+        return f.read()
+
 
 if __name__ == "__main__":
     mcp.run(transport="http", host="0.0.0.0", port=8000)
