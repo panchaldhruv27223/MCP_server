@@ -97,7 +97,7 @@ def summarize(start_date, end_date, category=None):
         
         query += " GROUP BY category ORDER BY category ASC"
         
-        cur = c.execute(quere, params)
+        cur = c.execute(query, params)
         
         cols = [d[0] for d in cur.description]
         
