@@ -83,7 +83,7 @@ def summarize(start_date, end_date, category=None):
     """
 
     with sqlite3.connect(DB_PATH) as c:
-        quere = ("""
+        query = ("""
                  SELECT category, SUM(amount) as total_amount
                  FROM expenses
                  WHERE date BETWEEN ? AND ?
